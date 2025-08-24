@@ -1,11 +1,8 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-from scipy.stats import norm
 import plotly.graph_objects as go
-from numpy import log, sqrt, exp
-import matplotlib.pyplot as plt
+import math # Import math for sqrt, exp, log, pi, erf
 import seaborn as sns
 
 #######################
@@ -158,6 +155,22 @@ h3 {
 </style>
 """, unsafe_allow_html=True)
 
+# --- Manual Implementations of Standard Normal CDF and PDF ---
+
+def manual_norm_cdf(x):
+    """
+    Calculates the Cumulative Distribution Function (CDF) for a standard normal distribution.
+    phi(x) = 0.5 * (1 + erf(x / sqrt(2)))
+    """
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+def manual_norm_pdf(x):
+    """
+    Calculates the Probability Density Function (PDF) for a standard normal distribution.
+    phi'(x) = (1 / sqrt(2 * pi)) * exp(-x^2 / 2)
+    """
+    return (1 / math.sqrt(2 * math.pi)) * math.exp(-0.5 * x**2)
+
 class BlackScholes:
     def __init__(
         self,
@@ -182,75 +195,101 @@ class BlackScholes:
         volatility = self.volatility
         interest_rate = self.interest_rate
 
+        # Ensure volatility and time_to_maturity are not zero to prevent division by zero
+        # In a real app, you might want more robust error handling or input validation
+        if volatility <= 0 or time_to_maturity <= 0:
+            st.error("Volatility and Time to Maturity must be greater than zero.")
+            self.call_price = 0.0
+            self.put_price = 0.0
+            self.call_delta = self.put_delta = self.call_gamma = self.put_gamma = 0.0
+            self.call_theta = self.put_theta = self.vega = self.call_rho = self.put_rho = 0.0
+            return 0.0, 0.0
+
         d1 = (
-            log(current_price / strike) +
+            math.log(current_price / strike) +
             (interest_rate + 0.5 * volatility ** 2) * time_to_maturity
             ) / (
-                volatility * sqrt(time_to_maturity)
+                volatility * math.sqrt(time_to_maturity)
             )
-        d2 = d1 - volatility * sqrt(time_to_maturity)
+        d2 = d1 - volatility * math.sqrt(time_to_maturity)
 
-        call_price = current_price * norm.cdf(d1) - (
-            strike * exp(-(interest_rate * time_to_maturity)) * norm.cdf(d2)
+        # Use manual_norm_cdf instead of norm.cdf
+        call_price = current_price * manual_norm_cdf(d1) - (
+            strike * math.exp(-(interest_rate * time_to_maturity)) * manual_norm_cdf(d2)
         )
         put_price = (
-            strike * exp(-(interest_rate * time_to_maturity)) * norm.cdf(-d2)
-        ) - current_price * norm.cdf(-d1)
+            strike * math.exp(-(interest_rate * time_to_maturity)) * manual_norm_cdf(-d2)
+        ) - current_price * manual_norm_cdf(-d1)
 
         self.call_price = call_price
         self.put_price = put_price
 
-        # GREEKS
+        # GREEKS - using manual_norm_pdf and manual_norm_cdf
         # Delta
-        self.call_delta = norm.cdf(d1)
-        self.put_delta = norm.cdf(d1) - 1 # Corrected formula for put delta
+        self.call_delta = manual_norm_cdf(d1)
+        self.put_delta = manual_norm_cdf(d1) - 1 
 
         # Gamma
-        # norm.pdf(d1) is the probability density function (N'(d1))
-        # Note: Gamma is the same for Call and Put
-        self.call_gamma = norm.pdf(d1) / (
-            current_price * volatility * sqrt(time_to_maturity)
+        self.call_gamma = manual_norm_pdf(d1) / (
+            current_price * volatility * math.sqrt(time_to_maturity)
         )
         self.put_gamma = self.call_gamma
 
         # Theta (approximated for daily change, then annualized)
-        # Note: Theta can be complex, this is a common approximation
         self.call_theta = (
-            (-current_price * norm.pdf(d1) * volatility / (2 * sqrt(time_to_maturity)))
-            - (interest_rate * strike * exp(-interest_rate * time_to_maturity) * norm.cdf(d2))
+            (-current_price * manual_norm_pdf(d1) * volatility / (2 * math.sqrt(time_to_maturity)))
+            - (interest_rate * strike * math.exp(-interest_rate * time_to_maturity) * manual_norm_cdf(d2))
         ) / 365 # Daily theta
         self.put_theta = (
-            (-current_price * norm.pdf(d1) * volatility / (2 * sqrt(time_to_maturity)))
-            + (interest_rate * strike * exp(-interest_rate * time_to_maturity) * norm.cdf(-d2))
+            (-current_price * manual_norm_pdf(d1) * volatility / (2 * math.sqrt(time_to_maturity)))
+            + (interest_rate * strike * math.exp(-interest_rate * time_to_maturity) * manual_norm_cdf(-d2))
         ) / 365 # Daily theta
 
         # Vega
-        self.vega = current_price * norm.pdf(d1) * sqrt(time_to_maturity) / 100 # Change for 1% vol change
+        self.vega = current_price * manual_norm_pdf(d1) * math.sqrt(time_to_maturity) / 100 # Change for 1% vol change
 
         # Rho (approximated for 1% change in interest rate)
-        self.call_rho = (strike * time_to_maturity * exp(-interest_rate * time_to_maturity) * norm.cdf(d2)) / 100
-        self.put_rho = (-strike * time_to_maturity * exp(-interest_rate * time_to_maturity) * norm.cdf(-d2)) / 100
-
+        self.call_rho = (strike * time_to_maturity * math.exp(-interest_rate * time_to_maturity) * manual_norm_cdf(d2)) / 100
+        self.put_rho = (-strike * time_to_maturity * math.exp(-interest_rate * time_to_maturity) * manual_norm_cdf(-d2)) / 100
 
         return call_price, put_price
 
 def plot_heatmap(bs_model, spot_range, vol_range, strike):
     call_prices = np.zeros((len(vol_range), len(spot_range)))
     put_prices = np.zeros((len(vol_range), len(spot_range)))
+    
+    # Handle cases where bs_model might have invalid parameters, resulting in 0 prices
+    if bs_model.volatility <= 0 or bs_model.time_to_maturity <= 0:
+        fig_call, ax_call = plt.subplots(figsize=(10, 8))
+        ax_call.text(0.5, 0.5, "Invalid parameters for heatmap generation.", horizontalalignment='center', verticalalignment='center', transform=ax_call.transAxes, fontsize=12, color='red')
+        ax_call.set_title('CALL Option Price (Error)', fontsize=14)
+        ax_call.axis('off')
+
+        fig_put, ax_put = plt.subplots(figsize=(10, 8))
+        ax_put.text(0.5, 0.5, "Invalid parameters for heatmap generation.", horizontalalignment='center', verticalalignment='center', transform=ax_put.transAxes, fontsize=12, color='red')
+        ax_put.set_title('PUT Option Price (Error)', fontsize=14)
+        ax_put.axis('off')
+        return fig_call, fig_put
+
 
     for i, vol in enumerate(vol_range):
         for j, spot in enumerate(spot_range):
-            bs_temp = BlackScholes(
-                time_to_maturity=bs_model.time_to_maturity,
-                strike=strike,
-                current_price=spot,
-                volatility=vol,
-                interest_rate=bs_model.interest_rate
-            )
-            bs_temp.calculate_prices()
-            call_prices[i, j] = bs_temp.call_price
-            put_prices[i, j] = bs_temp.put_price
-
+            # Ensure temporary model also has valid parameters for calculation
+            if vol > 0 and bs_model.time_to_maturity > 0:
+                bs_temp = BlackScholes(
+                    time_to_maturity=bs_model.time_to_maturity,
+                    strike=strike,
+                    current_price=spot,
+                    volatility=vol,
+                    interest_rate=bs_model.interest_rate
+                )
+                bs_temp.calculate_prices()
+                call_prices[i, j] = bs_temp.call_price
+                put_prices[i, j] = bs_temp.put_price
+            else:
+                call_prices[i, j] = np.nan # Or 0, depending on desired behavior
+                put_prices[i, j] = np.nan
+    
     # Plotting Call Price Heatmap
     fig_call, ax_call = plt.subplots(figsize=(10, 8))
     sns.heatmap(call_prices, xticklabels=np.round(spot_range, 2), yticklabels=np.round(vol_range, 2),
@@ -260,7 +299,7 @@ def plot_heatmap(bs_model, spot_range, vol_range, strike):
     ax_call.set_ylabel('Volatility', fontsize=12)
     plt.xticks(rotation=45)
     plt.yticks(rotation=0)
-
+    
     # Plotting Put Price Heatmap
     fig_put, ax_put = plt.subplots(figsize=(10, 8))
     sns.heatmap(put_prices, xticklabels=np.round(spot_range, 2), yticklabels=np.round(vol_range, 2),
@@ -270,7 +309,7 @@ def plot_heatmap(bs_model, spot_range, vol_range, strike):
     ax_put.set_ylabel('Volatility', fontsize=12)
     plt.xticks(rotation=45)
     plt.yticks(rotation=0)
-
+    
     return fig_call, fig_put
 
 
@@ -287,19 +326,19 @@ with st.sidebar:
     current_price = st.number_input("Current Asset Price (S)", value=100.0, min_value=0.01)
     strike = st.number_input("Strike Price (K)", value=100.0, min_value=0.01)
     time_to_maturity = st.number_input("Time to Maturity (T in Years)", value=1.0, min_value=0.01)
-    volatility = st.number_input("Volatility (σ - Annualized)", value=0.2, min_value=0.01, max_value=1.0)
+    volatility = st.number_input("Volatility (σ - Annualized)", value=0.2, min_value=0.0001, max_value=1.0) # Lower min_value for volatility
     interest_rate = st.number_input("Risk-Free Interest Rate (r - Annualized)", value=0.05, min_value=0.0)
 
     st.markdown("---")
     st.subheader("Heatmap Settings")
-
+    
     # Use st.expander for heatmap specific settings to keep sidebar clean
     with st.expander("Adjust Heatmap Ranges"):
         spot_min = st.number_input('Min Spot Price', min_value=0.01, value=current_price*0.8, step=0.01)
         spot_max = st.number_input('Max Spot Price', min_value=0.01, value=current_price*1.2, step=0.01)
-        vol_min = st.slider('Min Volatility', min_value=0.01, max_value=1.0, value=volatility*0.5, step=0.01)
-        vol_max = st.slider('Max Volatility', min_value=0.01, max_value=1.0, value=volatility*1.5, step=0.01)
-
+        vol_min = st.slider('Min Volatility', min_value=0.0001, max_value=1.0, value=volatility*0.5, step=0.01) # Lower min_value
+        vol_max = st.slider('Max Volatility', min_value=0.0001, max_value=1.0, value=volatility*1.5, step=0.01) # Lower min_value
+        
         spot_range = np.linspace(spot_min, spot_max, 10) # 10 points for readability
         vol_range = np.linspace(vol_min, vol_max, 10) # 10 points for readability
 
