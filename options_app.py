@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
 import math # Import math for sqrt, exp, log, pi, erf
+import matplotlib.pyplot as plt
 import seaborn as sns
 
 #######################
@@ -264,11 +264,13 @@ def plot_heatmap(bs_model, spot_range, vol_range, strike):
         ax_call.text(0.5, 0.5, "Invalid parameters for heatmap generation.", horizontalalignment='center', verticalalignment='center', transform=ax_call.transAxes, fontsize=12, color='red')
         ax_call.set_title('CALL Option Price (Error)', fontsize=14)
         ax_call.axis('off')
+        plt.close(fig_call) # Close figure to prevent displaying empty plot
 
         fig_put, ax_put = plt.subplots(figsize=(10, 8))
         ax_put.text(0.5, 0.5, "Invalid parameters for heatmap generation.", horizontalalignment='center', verticalalignment='center', transform=ax_put.transAxes, fontsize=12, color='red')
         ax_put.set_title('PUT Option Price (Error)', fontsize=14)
         ax_put.axis('off')
+        plt.close(fig_put) # Close figure to prevent displaying empty plot
         return fig_call, fig_put
 
 
@@ -284,145 +286,4 @@ def plot_heatmap(bs_model, spot_range, vol_range, strike):
                     interest_rate=bs_model.interest_rate
                 )
                 bs_temp.calculate_prices()
-                call_prices[i, j] = bs_temp.call_price
-                put_prices[i, j] = bs_temp.put_price
-            else:
-                call_prices[i, j] = np.nan # Or 0, depending on desired behavior
-                put_prices[i, j] = np.nan
-    
-    # Plotting Call Price Heatmap
-    fig_call, ax_call = plt.subplots(figsize=(10, 8))
-    sns.heatmap(call_prices, xticklabels=np.round(spot_range, 2), yticklabels=np.round(vol_range, 2),
-                annot=True, fmt=".2f", cmap="viridis", ax=ax_call, linewidths=.5, linecolor='gray')
-    ax_call.set_title('CALL Option Price', fontsize=14)
-    ax_call.set_xlabel('Spot Price', fontsize=12)
-    ax_call.set_ylabel('Volatility', fontsize=12)
-    plt.xticks(rotation=45)
-    plt.yticks(rotation=0)
-    
-    # Plotting Put Price Heatmap
-    fig_put, ax_put = plt.subplots(figsize=(10, 8))
-    sns.heatmap(put_prices, xticklabels=np.round(spot_range, 2), yticklabels=np.round(vol_range, 2),
-                annot=True, fmt=".2f", cmap="magma", ax=ax_put, linewidths=.5, linecolor='gray')
-    ax_put.set_title('PUT Option Price', fontsize=14)
-    ax_put.set_xlabel('Spot Price', fontsize=12)
-    ax_put.set_ylabel('Volatility', fontsize=12)
-    plt.xticks(rotation=45)
-    plt.yticks(rotation=0)
-    
-    return fig_call, fig_put
-
-
-# Sidebar for User Inputs
-with st.sidebar:
-    st.title("📊 Black-Scholes Model")
-    st.markdown("---")
-    st.write("`Created by:`")
-    linkedin_url = "https://www.linkedin.com/in/mprudhvi/"
-    st.markdown(f'<a href="{linkedin_url}" target="_blank" style="text-decoration: none; color: inherit;"><img src="https://cdn-icons-png.flaticon.com/512/174/174857.png" width="25" height="25" style="vertical-align: middle; margin-right: 10px;">`Prudhvi Reddy, Muppala`</a>', unsafe_allow_html=True)
-    st.markdown("---")
-
-    st.subheader("Option Parameters")
-    current_price = st.number_input("Current Asset Price (S)", value=100.0, min_value=0.01)
-    strike = st.number_input("Strike Price (K)", value=100.0, min_value=0.01)
-    time_to_maturity = st.number_input("Time to Maturity (T in Years)", value=1.0, min_value=0.01)
-    volatility = st.number_input("Volatility (σ - Annualized)", value=0.2, min_value=0.0001, max_value=1.0) # Lower min_value for volatility
-    interest_rate = st.number_input("Risk-Free Interest Rate (r - Annualized)", value=0.05, min_value=0.0)
-
-    st.markdown("---")
-    st.subheader("Heatmap Settings")
-    
-    # Use st.expander for heatmap specific settings to keep sidebar clean
-    with st.expander("Adjust Heatmap Ranges"):
-        spot_min = st.number_input('Min Spot Price', min_value=0.01, value=current_price*0.8, step=0.01)
-        spot_max = st.number_input('Max Spot Price', min_value=0.01, value=current_price*1.2, step=0.01)
-        vol_min = st.slider('Min Volatility', min_value=0.0001, max_value=1.0, value=volatility*0.5, step=0.01) # Lower min_value
-        vol_max = st.slider('Max Volatility', min_value=0.0001, max_value=1.0, value=volatility*1.5, step=0.01) # Lower min_value
-        
-        spot_range = np.linspace(spot_min, spot_max, 10) # 10 points for readability
-        vol_range = np.linspace(vol_min, vol_max, 10) # 10 points for readability
-
-
-# Main Page for Output Display
-st.title("Black-Scholes Option Pricing Model")
-st.markdown("A dynamic tool to calculate option prices and visualize their sensitivity to key market parameters.")
-
-# Table of Inputs
-st.markdown("## Input Parameters")
-input_data = {
-    "Parameter": ["Current Asset Price (S)", "Strike Price (K)", "Time to Maturity (T)", "Volatility (σ)", "Risk-Free Rate (r)"],
-    "Value": [current_price, strike, time_to_maturity, volatility, interest_rate],
-    "Unit": ["$", "$", "Years", "Annualized", "Annualized"]
-}
-input_df = pd.DataFrame(input_data)
-st.dataframe(input_df.set_index('Parameter'), use_container_width=True)
-
-
-# Calculate Call and Put values
-bs_model = BlackScholes(time_to_maturity, strike, current_price, volatility, interest_rate)
-call_price, put_price = bs_model.calculate_prices()
-
-# Display Call and Put Values in colored containers
-st.markdown("---")
-st.markdown("## Option Prices")
-col_call, col_put = st.columns([1,1], gap="large")
-
-with col_call:
-    st.markdown(f"""
-        <div class="metric-container metric-call">
-            <div>
-                <div class="metric-label">CALL Option Value</div>
-                <div class="metric-value">${call_price:.2f}</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-with col_put:
-    st.markdown(f"""
-        <div class="metric-container metric-put">
-            <div>
-                <div class="metric-label">PUT Option Value</div>
-                <div class="metric-value">${put_price:.2f}</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-# Display Greeks
-st.markdown("---")
-st.markdown("## Option Greeks")
-st.info("The 'Greeks' measure the sensitivity of an option's price to changes in underlying parameters.")
-
-greeks_data = {
-    "Greek": ["Delta (Call)", "Delta (Put)", "Gamma", "Theta (Daily Call)", "Theta (Daily Put)", "Vega", "Rho (Call)", "Rho (Put)"],
-    "Value": [bs_model.call_delta, bs_model.put_delta, bs_model.call_gamma, bs_model.call_theta, bs_model.put_theta, bs_model.vega, bs_model.call_rho, bs_model.put_rho],
-    "Description": [
-        "Sensitivity to asset price",
-        "Sensitivity to asset price",
-        "Sensitivity to Delta's change",
-        "Sensitivity to passage of time",
-        "Sensitivity to passage of time",
-        "Sensitivity to volatility",
-        "Sensitivity to interest rate",
-        "Sensitivity to interest rate"
-    ]
-}
-greeks_df = pd.DataFrame(greeks_data)
-st.dataframe(greeks_df.set_index('Greek'), use_container_width=True)
-
-
-st.markdown("---")
-st.header("Interactive Option Price Heatmaps")
-st.info("Explore how option prices fluctuate with varying 'Spot Prices and Volatility' levels, while maintaining a constant 'Strike Price'.")
-
-# Interactive Sliders and Heatmaps for Call and Put Options
-col_heatmap_call, col_heatmap_put = st.columns([1,1], gap="large")
-
-with col_heatmap_call:
-    st.subheader("Call Price Sensitivity")
-    heatmap_fig_call, _ = plot_heatmap(bs_model, spot_range, vol_range, strike)
-    st.pyplot(heatmap_fig_call)
-
-with col_heatmap_put:
-    st.subheader("Put Price Sensitivity")
-    _, heatmap_fig_put = plot_heatmap(bs_model, spot_range, vol_range, strike)
-    st.pyplot(heatmap_fig_put)
+                call_prices[i, j] = bs_temp.call_pr
