@@ -1,9 +1,8 @@
-
+pip install scipy
 import streamlit as st
 import pandas as pd
 import numpy as np
-import scipy as sp
-from sp.stats import norm
+from np.stats import norm
 import plotly.graph_objects as go
 from numpy import log, sqrt, exp
 import matplotlib.pyplot as plt
