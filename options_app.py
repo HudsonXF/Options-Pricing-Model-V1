@@ -395,5 +395,3 @@ with col_heatmap_put:
     st.subheader("Put Price Sensitivity")
     _, heatmap_fig_put = plot_heatmap(bs_model, spot_range, vol_range, strike)
     st.pyplot(heatmap_fig_put)
-
-!pip install streamlit
